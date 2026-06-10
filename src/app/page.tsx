@@ -19,6 +19,12 @@ export default function LandingPage() {
       <FloatingShape kind="circle" className="bottom-[20%] left-[12%] text-[#FFC53D]" delay={1.6} />
       <FloatingShape kind="square" className="bottom-[16%] right-[9%] rotate-6 text-[#3BD978]" delay={2.4} />
 
+      {/* Focused spotlight behind the title */}
+      <div
+        aria-hidden="true"
+        className="pointer-events-none absolute left-1/2 top-1/3 h-[26rem] w-[26rem] -translate-x-1/2 -translate-y-1/2 rounded-full bg-brand-600/25 blur-[110px]"
+      />
+
       <motion.div
         initial={{ opacity: 0, y: 24 }}
         animate={{ opacity: 1, y: 0 }}
@@ -43,7 +49,7 @@ export default function LandingPage() {
         <div className="mt-12 grid w-full max-w-xl grid-cols-1 gap-4 sm:grid-cols-2">
           <Link
             href="/host"
-            className="card group flex flex-col items-center gap-3 px-6 py-9 transition duration-200 hover:border-brand-400/50 hover:bg-white/[0.07] hover:shadow-glow-brand"
+            className="card group flex flex-col items-center gap-3 px-6 py-9 transition duration-200 hover:-translate-y-1 hover:border-brand-400/50 hover:bg-white/[0.07] hover:shadow-glow-brand"
           >
             <span className="flex h-14 w-14 items-center justify-center rounded-2xl bg-gradient-to-b from-brand-500 to-brand-700 text-white shadow-glow-brand">
               <MonitorPlay className="h-7 w-7" strokeWidth={2.25} />
@@ -58,7 +64,7 @@ export default function LandingPage() {
 
           <Link
             href="/player"
-            className="card group flex flex-col items-center gap-3 px-6 py-9 transition duration-200 hover:border-grape-400/50 hover:bg-white/[0.07] hover:shadow-[0_0_44px_-10px_rgba(168,85,247,0.55)]"
+            className="card group flex flex-col items-center gap-3 px-6 py-9 transition duration-200 hover:-translate-y-1 hover:border-grape-400/50 hover:bg-white/[0.07] hover:shadow-[0_0_44px_-10px_rgba(168,85,247,0.55)]"
           >
             <span className="flex h-14 w-14 items-center justify-center rounded-2xl bg-gradient-to-b from-grape-500 to-grape-600 text-white shadow-[0_0_44px_-10px_rgba(168,85,247,0.55)]">
               <Smartphone className="h-7 w-7" strokeWidth={2.25} />

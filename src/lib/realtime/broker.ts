@@ -5,7 +5,9 @@ import {
   get,
   incr,
   isRedisConfigured,
+  publish,
   setNx,
+  subscribeChannel,
   xadd,
   xlastId,
   xrangeAfter,
@@ -110,7 +112,17 @@ function streamKey(pin: string): string {
   return `game:${pin}:events`;
 }
 
-/** Append an event to the game's log and fan it out. Returns the event id. */
+function pubChannel(pin: string): string {
+  return `game:${pin}:pub`;
+}
+
+/**
+ * Append an event to the game's log and fan it out. Returns the event id.
+ *
+ * Redis mode uses BOTH primitives: the stream is the durable ordered log
+ * (replay on reconnect), and pub/sub delivers the event to live subscribers
+ * instantly — no polling latency.
+ */
 export async function publishToBroker(
   pin: string,
   event: EventName,
@@ -121,7 +133,10 @@ export async function publishToBroker(
       e: event,
       d: JSON.stringify(data ?? null),
     });
-    await expire(streamKey(pin), STREAM_TTL_SECONDS);
+    await Promise.all([
+      expire(streamKey(pin), STREAM_TTL_SECONDS),
+      publish(pubChannel(pin), JSON.stringify({ id, event, data: data ?? null })),
+    ]);
     return id;
   }
 
@@ -173,6 +188,45 @@ export async function eventsAfter(
   const idx = ch.history.findIndex((e) => e.id === afterId);
   // Unknown id (pruned or bogus): replay everything we still have.
   return idx === -1 ? [...ch.history] : ch.history.slice(idx + 1);
+}
+
+/**
+ * Redis mode: live subscription via Upstash pub/sub (instant delivery).
+ * Resolves when the upstream ends; rejects on abort/transport error — callers
+ * should fall back to polling `eventsAfter`.
+ */
+export async function subscribeRedisLive(
+  pin: string,
+  handlers: {
+    onSubscribed?: () => void;
+    onEvent: (event: BrokerEvent) => void;
+  },
+  signal: AbortSignal
+): Promise<void> {
+  await subscribeChannel(
+    pubChannel(pin),
+    {
+      onSubscribed: handlers.onSubscribed,
+      onMessage: (payload) => {
+        try {
+          const parsed = JSON.parse(payload) as BrokerEvent;
+          if (parsed?.id && parsed?.event) handlers.onEvent(parsed);
+        } catch {
+          // Ignore malformed payloads.
+        }
+      },
+    },
+    signal
+  );
+}
+
+/** Orders two stream ids ("ms-seq"). True when `a` is newer than `b`. */
+export function isNewerEventId(a: string, b: string): boolean {
+  if (!b) return true;
+  if (!a) return false;
+  const [am, as] = a.split("-").map(Number);
+  const [bm, bs] = b.split("-").map(Number);
+  return am > bm || (am === bm && (as || 0) > (bs || 0));
 }
 
 // ---------------------------------------------------------------------------

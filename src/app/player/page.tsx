@@ -27,10 +27,16 @@ import {
 import { isValidUsername, normalizeUsername } from "@/lib/utils";
 import { useSound } from "@/lib/useSound";
 import { ANSWER_SHAPES } from "@/lib/answers";
+import dynamic from "next/dynamic";
 import { AnswerTile } from "@/components/AnswerTile";
 import { Timer } from "@/components/Timer";
 import { Leaderboard } from "@/components/Leaderboard";
-import { Confetti } from "@/components/Confetti";
+
+// Confetti is only needed on the end screen — keep it out of the main bundle.
+const Confetti = dynamic(
+  () => import("@/components/Confetti").then((m) => m.Confetti),
+  { ssr: false }
+);
 
 /** The player's local UI phase. */
 type Phase =
@@ -73,7 +79,11 @@ export default function PlayerPage() {
   useEffect(() => {
     if (!mounted) return;
     const urlPin = new URLSearchParams(window.location.search).get("pin");
-    if (urlPin && /^\d{6}$/.test(urlPin)) setFormPin(urlPin);
+    if (urlPin && /^\d{6}$/.test(urlPin)) {
+      setFormPin(urlPin);
+      // PIN came from the QR — jump straight to the name field.
+      setTimeout(() => document.getElementById("name")?.focus(), 50);
+    }
 
     const state = usePlayerStore.getState();
     if (state.joined && state.pin && state.username) {
@@ -191,13 +201,19 @@ export default function PlayerPage() {
   );
 
   // Safety net: if the host never replies within 8s, surface a clear error.
+  // The Wi-Fi hint only applies to local-network play, not the public site.
   useEffect(() => {
     if (phase !== "joining" || !pin || !username) return;
     const id = setTimeout(() => {
       setPhase((p) => {
         if (p === "joining") {
+          const isLocal = /^(localhost|127\.|10\.|192\.168\.|172\.)/.test(
+            window.location.hostname
+          );
           setError(
-            "No response from the host. Check the PIN and make sure you're on the same Wi-Fi as the host screen."
+            isLocal
+              ? "No response from the host. Check the PIN and make sure you're on the same Wi-Fi as the host screen."
+              : "No response from the host. Double-check the PIN and ask the host if the game is still open."
           );
           setJoined(false);
           return "join";

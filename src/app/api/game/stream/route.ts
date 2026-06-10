@@ -1,9 +1,11 @@
 import type { NextRequest } from "next/server";
 import {
   eventsAfter,
+  isNewerEventId,
   latestEventId,
   serverTransport,
   subscribeMemory,
+  subscribeRedisLive,
   type BrokerEvent,
 } from "@/lib/realtime/broker";
 
@@ -19,8 +21,9 @@ import {
  *
  * Backends:
  *  - memory (local) : instant push via in-process subscription
- *  - redis (deployed): short polling of the Redis stream within a time budget,
- *    then a clean close so the client reconnects (lossless thanks to replay)
+ *  - redis (deployed): INSTANT push via Upstash pub/sub, with the stream as
+ *    the durable log — replay on reconnect, plus a slow safety-net poll in
+ *    case pub/sub ever hiccups (degrades to fast polling if it drops)
  */
 
 export const runtime = "nodejs";
@@ -30,7 +33,9 @@ export const dynamic = "force-dynamic";
 export const maxDuration = 300;
 
 const HEARTBEAT_MS = 15_000;
-const REDIS_POLL_MS = 900;
+// Safety-net poll cadence while pub/sub is healthy / after it failed.
+const SAFETY_POLL_MS = 15_000;
+const FALLBACK_POLL_MS = 1_000;
 // Close a bit before maxDuration so we end cleanly, not by termination.
 const TIME_BUDGET_MS = (maxDuration - 15) * 1000;
 
@@ -122,18 +127,48 @@ export async function GET(request: NextRequest) {
           return;
         }
 
-        // Redis: poll the stream until the time budget runs out, then close
-        // cleanly — the client reconnects and resumes from its last id.
+        // Redis: instant delivery via pub/sub. Deduplicated against the
+        // cursor so the catch-up reads and live messages can't double-send.
+        const sendEvent = (event: BrokerEvent) => {
+          if (!isNewerEventId(event.id, cursor)) return;
+          cursor = event.id;
+          write(frame(event));
+        };
+
+        const subController = new AbortController();
+        cleanup = () => subController.abort();
+
+        let pollMs = SAFETY_POLL_MS;
+        subscribeRedisLive(pin, {
+          // Once live, re-read the log to close the catch-up -> subscribe gap.
+          onSubscribed: () => {
+            void eventsAfter(pin, cursor)
+              .then((missed) => missed.forEach(sendEvent))
+              .catch(() => {});
+          },
+          onEvent: sendEvent,
+        }, subController.signal).catch(() => {
+          // Pub/sub unavailable — degrade to fast polling, still correct.
+          pollMs = FALLBACK_POLL_MS;
+        });
+
+        // Safety-net poll: catches anything pub/sub might miss, and carries
+        // the whole load if the subscription drops.
         const deadline = Date.now() + TIME_BUDGET_MS;
+        let lastPoll = Date.now();
         while (!closed && Date.now() < deadline) {
-          await new Promise((r) => setTimeout(r, REDIS_POLL_MS));
-          if (closed) return;
-          const events = await eventsAfter(pin, cursor);
-          for (const event of events) {
-            if (!write(frame(event))) return;
-            cursor = event.id;
+          await new Promise((r) => setTimeout(r, 250));
+          if (closed) break;
+          if (Date.now() - lastPoll < pollMs) continue;
+          lastPoll = Date.now();
+          try {
+            const events = await eventsAfter(pin, cursor);
+            events.forEach(sendEvent);
+          } catch {
+            // Transient Redis error — next poll retries.
           }
         }
+        subController.abort();
         close();
       } catch (err) {
         console.error("[/api/game/stream] error:", err);

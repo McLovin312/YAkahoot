@@ -31,10 +31,16 @@ import { buildLeaderboard } from "@/lib/score";
 import { isValidUsername } from "@/lib/utils";
 import { useSound } from "@/lib/useSound";
 import { ANSWER_SHAPES } from "@/lib/answers";
+import dynamic from "next/dynamic";
 import { AnswerTile } from "@/components/AnswerTile";
 import { Timer } from "@/components/Timer";
 import { Leaderboard } from "@/components/Leaderboard";
-import { Confetti } from "@/components/Confetti";
+
+// Confetti is only needed on the podium — keep it out of the main bundle.
+const Confetti = dynamic(
+  () => import("@/components/Confetti").then((m) => m.Confetti),
+  { ssr: false }
+);
 
 /**
  * Host game screen. Renders different views based on `gameState`:
@@ -246,15 +252,14 @@ function LobbyView() {
       .catch(() => setJoinBase(origin));
   }, []);
 
-  // Loud warning if the site is deployed without a shared realtime backend
-  // (Upstash Redis or Pusher) — players would land on different serverless
-  // instances and never see each other.
-  const [misconfigured, setMisconfigured] = useState(false);
+  // Loud warning if the realtime backend is missing or unreachable — the
+  // health endpoint explains exactly what to fix.
+  const [healthIssue, setHealthIssue] = useState<string | null>(null);
   useEffect(() => {
     fetch("/api/health")
       .then((r) => r.json())
-      .then((d: { misconfigured?: boolean }) =>
-        setMisconfigured(Boolean(d.misconfigured))
+      .then((d: { misconfigured?: boolean; hint?: string }) =>
+        setHealthIssue(d.misconfigured ? (d.hint ?? "Realtime backend unavailable.") : null)
       )
       .catch(() => {});
   }, []);
@@ -273,24 +278,30 @@ function LobbyView() {
 
   return (
     <div className="flex flex-col items-center">
-      {misconfigured && (
+      {healthIssue && (
         <div className="card mb-6 w-full max-w-4xl border-amber-400/40 bg-amber-500/10 p-4 text-sm text-amber-200">
-          <strong>Realtime backend missing.</strong> This deployment has no
-          Upstash Redis (or Pusher) configured, so players won&apos;t connect
-          reliably. Add the <code>UPSTASH_REDIS_REST_URL</code> and{" "}
-          <code>UPSTASH_REDIS_REST_TOKEN</code> environment variables and
-          redeploy.
+          <strong>Players can&apos;t connect:</strong> {healthIssue}
         </div>
       )}
       <div className="grid w-full max-w-4xl gap-6 lg:grid-cols-[1fr_auto]">
-        {/* PIN marquee */}
+        {/* PIN marquee — one glowing card per digit, game-show style */}
         <div className="card flex flex-col items-center justify-center py-10 text-center">
           <span className="eyebrow">Game PIN</span>
-          <span className="mt-3 select-all font-display text-7xl font-extrabold tracking-[0.18em] text-white [text-shadow:0_0_40px_rgba(99,102,241,0.5)] sm:text-9xl">
-            {pin}
-          </span>
+          <div className="mt-4 flex select-all gap-2 sm:gap-3" aria-label={`Game PIN ${pin}`}>
+            {pin.split("").map((digit, i) => (
+              <motion.span
+                key={`${pin}-${i}`}
+                initial={{ opacity: 0, y: 16, scale: 0.9 }}
+                animate={{ opacity: 1, y: 0, scale: 1 }}
+                transition={{ delay: 0.08 + i * 0.06, type: "spring", stiffness: 320, damping: 22 }}
+                className="flex h-20 w-12 items-center justify-center rounded-xl border border-white/15 bg-gradient-to-b from-white/[0.1] to-white/[0.03] font-display text-5xl font-extrabold tabular-nums text-white shadow-card [text-shadow:0_0_28px_rgba(129,140,248,0.7)] sm:h-32 sm:w-20 sm:text-7xl"
+              >
+                {digit}
+              </motion.span>
+            ))}
+          </div>
           {joinBase && (
-            <p className="mt-4 font-display text-lg font-semibold text-slate-300">
+            <p className="mt-5 font-display text-lg font-semibold text-slate-300">
               Join at{" "}
               <span className="text-brand-300">
                 {joinBase.replace(/^https?:\/\//, "")}
@@ -423,7 +434,7 @@ function QuestionView() {
       {/* Progress bar */}
       <div className="mb-4 h-1.5 w-full overflow-hidden rounded-full bg-white/10">
         <div
-          className="h-full rounded-full bg-gradient-to-r from-brand-500 to-grape-500 transition-all duration-500"
+          className="h-full rounded-full bg-gradient-to-r from-brand-500 to-grape-500 shadow-[0_0_12px_rgba(129,140,248,0.8)] transition-all duration-500"
           style={{
             width: `${((currentIndex + 1) / questions.length) * 100}%`,
           }}
@@ -443,7 +454,7 @@ function QuestionView() {
 
       {/* Question + timer */}
       <div className="card mb-6 flex flex-col items-center gap-6 p-8 text-center sm:flex-row sm:text-left">
-        <h2 className="flex-1 font-display text-2xl font-bold leading-snug text-white sm:text-4xl">
+        <h2 className="flex-1 font-display text-2xl font-bold leading-snug text-white sm:text-4xl lg:text-5xl">
           {question.question}
         </h2>
         {endsAt && (
@@ -634,10 +645,15 @@ function EndView() {
         </motion.div>
       )}
 
-      {/* 2nd & 3rd */}
+      {/* 2nd & 3rd — staggered reveal after the champion card */}
       <div className="mb-8 flex flex-wrap justify-center gap-4">
         {second && (
-          <div className="card px-8 py-5">
+          <motion.div
+            initial={{ opacity: 0, y: 18 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ delay: 0.35 }}
+            className="card px-8 py-5"
+          >
             <p className="font-display font-bold uppercase tracking-widest text-slate-300">
               2nd
             </p>
@@ -647,10 +663,15 @@ function EndView() {
             <p className="font-display font-bold text-slate-300">
               {second.score.toLocaleString()} pts
             </p>
-          </div>
+          </motion.div>
         )}
         {third && (
-          <div className="card px-8 py-5">
+          <motion.div
+            initial={{ opacity: 0, y: 18 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ delay: 0.5 }}
+            className="card px-8 py-5"
+          >
             <p className="font-display font-bold uppercase tracking-widest text-orange-300">
               3rd
             </p>
@@ -660,7 +681,7 @@ function EndView() {
             <p className="font-display font-bold text-slate-300">
               {third.score.toLocaleString()} pts
             </p>
-          </div>
+          </motion.div>
         )}
       </div>
 
