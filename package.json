@@ -1,0 +1,38 @@
+{
+  "name": "lakeside-ya-trivia",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Lakeside YA Trivia - a Kahoot-style real-time trivia game built with Next.js 15, TypeScript, Tailwind CSS, Zustand and Pusher.",
+  "scripts": {
+    "dev": "next dev",
+    "build": "next build",
+    "start": "next start",
+    "lint": "next lint"
+  },
+  "dependencies": {
+    "clsx": "^2.1.1",
+    "framer-motion": "^11.11.17",
+    "lucide-react": "^0.460.0",
+    "next": "^15.5.19",
+    "pusher": "^5.2.0",
+    "pusher-js": "^8.4.0",
+    "qrcode": "^1.5.4",
+    "react": "^18.3.1",
+    "react-confetti": "^6.1.0",
+    "react-dom": "^18.3.1",
+    "tailwind-merge": "^2.5.4",
+    "zustand": "^5.0.1"
+  },
+  "devDependencies": {
+    "@types/node": "^22.9.0",
+    "@types/qrcode": "^1.5.5",
+    "@types/react": "^18.3.12",
+    "@types/react-dom": "^18.3.1",
+    "autoprefixer": "^10.4.20",
+    "eslint": "^8.57.1",
+    "eslint-config-next": "^15.5.19",
+    "postcss": "^8.4.49",
+    "tailwindcss": "^3.4.15",
+    "typescript": "^5.6.3"
+  }
+}

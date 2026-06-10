@@ -1,0 +1,131 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* ===========================================================================
+   The stage — single dark theme.
+   Layered radial "spotlight" glows over a deep midnight base, with a fine
+   noise texture on top (see .stage-noise) so large dark areas don't band.
+   =========================================================================== */
+:root {
+  color-scheme: dark;
+}
+
+html,
+body {
+  height: 100%;
+}
+
+body {
+  @apply bg-night-900 text-slate-100 antialiased;
+  background-image:
+    radial-gradient(900px 600px at 12% -8%, rgb(79 70 229 / 0.20), transparent 60%),
+    radial-gradient(800px 520px at 88% -4%, rgb(147 51 234 / 0.16), transparent 60%),
+    radial-gradient(1100px 720px at 50% 118%, rgb(8 100 130 / 0.16), transparent 65%);
+  background-attachment: fixed;
+}
+
+/* Fixed full-screen noise overlay (mounted once in the root layout). */
+.stage-noise {
+  position: fixed;
+  inset: 0;
+  z-index: 0;
+  pointer-events: none;
+  opacity: 0.05;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='160' height='160'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='2' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
+}
+
+/* Everything renders above the noise layer. */
+main {
+  position: relative;
+  z-index: 1;
+}
+
+/* ===========================================================================
+   Component classes
+   =========================================================================== */
+@layer components {
+  /* Primary call-to-action — indigo/violet gradient with a soft glow. */
+  .btn-primary {
+    @apply inline-flex cursor-pointer items-center justify-center gap-2 rounded-xl
+           bg-gradient-to-b from-brand-500 to-brand-700 px-6 py-3
+           font-display text-lg font-semibold text-white shadow-glow-brand
+           ring-1 ring-inset ring-white/20
+           transition duration-200 hover:brightness-110 active:scale-[0.98]
+           focus:outline-none focus-visible:ring-4 focus-visible:ring-brand-400/70
+           disabled:cursor-not-allowed disabled:opacity-40 disabled:shadow-none;
+  }
+
+  /* Champion gold CTA. */
+  .btn-gold {
+    @apply inline-flex cursor-pointer items-center justify-center gap-2 rounded-xl
+           bg-gradient-to-b from-gold-400 to-gold-600 px-6 py-3
+           font-display text-lg font-semibold text-night-950 shadow-glow-gold
+           ring-1 ring-inset ring-white/30
+           transition duration-200 hover:brightness-110 active:scale-[0.98]
+           focus:outline-none focus-visible:ring-4 focus-visible:ring-gold-400/70
+           disabled:cursor-not-allowed disabled:opacity-40 disabled:shadow-none;
+  }
+
+  /* Quiet secondary action — glassy surface. */
+  .btn-ghost {
+    @apply inline-flex cursor-pointer items-center justify-center gap-2 rounded-xl
+           border border-white/10 bg-white/5 px-5 py-3
+           font-display font-semibold text-slate-200 backdrop-blur
+           transition duration-200 hover:bg-white/10 hover:text-white active:scale-[0.98]
+           focus:outline-none focus-visible:ring-4 focus-visible:ring-brand-400/60;
+  }
+
+  /* Destructive action. */
+  .btn-danger {
+    @apply inline-flex cursor-pointer items-center justify-center gap-2 rounded-xl
+           border border-rose-400/30 bg-rose-500/15 px-5 py-3
+           font-display font-semibold text-rose-200
+           transition duration-200 hover:bg-rose-500/25 active:scale-[0.98]
+           focus:outline-none focus-visible:ring-4 focus-visible:ring-rose-400/60;
+  }
+
+  /* Glass card surface. */
+  .card {
+    @apply rounded-2xl border border-white/10 bg-white/[0.045] p-6
+           shadow-card backdrop-blur-md;
+  }
+
+  /* Small pill / status chip. */
+  .chip {
+    @apply inline-flex items-center gap-1.5 rounded-full border border-white/10
+           bg-white/[0.06] px-3.5 py-1.5 font-display text-sm font-medium
+           text-slate-200 backdrop-blur;
+  }
+
+  /* Text inputs. */
+  .input {
+    @apply w-full rounded-xl border border-white/10 bg-night-950/60 px-4 py-3
+           font-display text-lg font-semibold text-white placeholder:text-slate-500
+           outline-none transition focus:border-brand-400/60
+           focus:ring-4 focus:ring-brand-500/30;
+  }
+
+  /* Section eyebrow label. */
+  .eyebrow {
+    @apply font-display text-xs font-bold uppercase tracking-[0.35em] text-gold-400;
+  }
+}
+
+/* Headings use the display face. */
+h1,
+h2,
+h3 {
+  @apply font-display;
+}
+
+/* Respect reduced-motion (accessibility). */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.001ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.001ms !important;
+  }
+}
