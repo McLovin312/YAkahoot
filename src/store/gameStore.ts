@@ -36,6 +36,11 @@ export const QUESTION_DURATION_MS = 20_000;
 interface GameStore {
   // --- identity / config ---
   pin: string;
+  /**
+   * Secret proving THIS browser is the game's host. Sent with every host
+   * event; the server rejects host events that don't carry it.
+   */
+  hostKey: string;
   topic: TopicId | null;
   randomize: boolean;
   soundEnabled: boolean;
@@ -62,8 +67,12 @@ interface GameStore {
   // --- actions ---
   createGame: (topic: TopicId, options?: { randomize?: boolean }) => void;
   addPlayer: (username: string, clientId: string) => boolean;
-  removePlayer: (username: string) => void;
-  recordAnswer: (username: string, answerIndex: 0 | 1 | 2 | 3) => void;
+  removePlayer: (username: string, clientId: string) => void;
+  recordAnswer: (
+    username: string,
+    clientId: string,
+    answerIndex: 0 | 1 | 2 | 3
+  ) => void;
   startQuestion: () => void;
   endQuestion: () => void;
   nextQuestion: () => void;
@@ -80,22 +89,36 @@ interface GameStore {
   currentQuestion: () => Question | null;
 }
 
+/** Generates the host's secret key (proves host identity to the server). */
+function generateHostKey(): string {
+  const bytes = new Uint8Array(16);
+  crypto.getRandomValues(bytes);
+  return Array.from(bytes, (b) => b.toString(16).padStart(2, "0")).join("");
+}
+
 /** Broadcast the current player roster (public, score-only) to everyone. */
-function broadcastPlayers(pin: string, players: Record<string, Player>) {
+function broadcastPlayers(
+  pin: string,
+  hostKey: string,
+  players: Record<string, Player>
+) {
   const list = Object.values(players).map((p) => ({
     username: p.username,
     score: p.score,
   }));
-  void publishEvent(pin, EVENTS.PLAYERS_UPDATE, {
-    players: list,
-    count: list.length,
-  });
+  void publishEvent(
+    pin,
+    EVENTS.PLAYERS_UPDATE,
+    { players: list, count: list.length },
+    hostKey
+  );
 }
 
 export const useGameStore = create<GameStore>()(
   persist(
     (set, get) => ({
       pin: "",
+      hostKey: "",
       topic: null,
       randomize: false,
       soundEnabled: true,
@@ -117,8 +140,11 @@ export const useGameStore = create<GameStore>()(
         const questions = (randomize ? shuffle(base) : base).map(
           shuffleQuestionOptions
         );
+        const pin = generateGamePin();
+        const hostKey = generateHostKey();
         set({
-          pin: generateGamePin(),
+          pin,
+          hostKey,
           topic,
           randomize,
           questions,
@@ -129,6 +155,9 @@ export const useGameStore = create<GameStore>()(
           endsAt: null,
           lastResults: null,
         });
+        // Claim the PIN on the server immediately so nobody else can register
+        // as this game's host (first host event with a key wins the claim).
+        void publishEvent(pin, EVENTS.GAME_STATE, { state: "lobby" }, hostKey);
       },
 
       // ---------------------------------------------------------------
@@ -136,7 +165,7 @@ export const useGameStore = create<GameStore>()(
       // a DIFFERENT device. If the same device (clientId) re-joins, it is
       // treated as a reconnect (score preserved) and returns true.
       addPlayer: (username, clientId) => {
-        const { players, pin } = get();
+        const { players, pin, hostKey } = get();
         const existing = players[username];
         if (existing) {
           // Same device reconnecting -> allow, keep their score.
@@ -154,27 +183,32 @@ export const useGameStore = create<GameStore>()(
         };
         const next = { ...players, [username]: newPlayer };
         set({ players: next });
-        broadcastPlayers(pin, next);
+        broadcastPlayers(pin, hostKey, next);
         return true;
       },
 
       // ---------------------------------------------------------------
-      removePlayer: (username) => {
-        const { players, pin } = get();
-        if (!players[username]) return;
+      // Anti-spoofing: only the device that joined as this username may
+      // remove it.
+      removePlayer: (username, clientId) => {
+        const { players, pin, hostKey } = get();
+        const player = players[username];
+        if (!player || player.clientId !== clientId) return;
         const next = { ...players };
         delete next[username];
         set({ players: next });
-        broadcastPlayers(pin, next);
+        broadcastPlayers(pin, hostKey, next);
       },
 
       // ---------------------------------------------------------------
-      // Anti-cheat: one answer per question, only while a question is live.
-      recordAnswer: (username, answerIndex) => {
+      // Anti-cheat: one answer per question, only while a question is live,
+      // and only from the device that joined as this username.
+      recordAnswer: (username, clientId, answerIndex) => {
         const state = get();
         if (state.gameState !== "question") return;
         const player = state.players[username];
         if (!player || player.hasAnswered) return;
+        if (player.clientId !== clientId) return;
 
         const question = state.questions[state.currentIndex];
         if (!question) return;
@@ -230,12 +264,17 @@ export const useGameStore = create<GameStore>()(
         });
 
         // Player-safe payload: NO question text, NO correct answer.
-        void publishEvent(state.pin, EVENTS.QUESTION_START, {
-          index: nextIndex,
-          total: state.questions.length,
-          endsAt,
-          durationMs: QUESTION_DURATION_MS,
-        });
+        void publishEvent(
+          state.pin,
+          EVENTS.QUESTION_START,
+          {
+            index: nextIndex,
+            total: state.questions.length,
+            endsAt,
+            durationMs: QUESTION_DURATION_MS,
+          },
+          state.hostKey
+        );
       },
 
       // ---------------------------------------------------------------
@@ -260,12 +299,17 @@ export const useGameStore = create<GameStore>()(
           },
         });
 
-        void publishEvent(state.pin, EVENTS.QUESTION_RESULTS, {
-          correctIndex: question.correctIndex,
-          correctCount,
-          totalAnswered: answered.length,
-          leaderboard,
-        });
+        void publishEvent(
+          state.pin,
+          EVENTS.QUESTION_RESULTS,
+          {
+            correctIndex: question.correctIndex,
+            correctCount,
+            totalAnswered: answered.length,
+            leaderboard,
+          },
+          state.hostKey
+        );
       },
 
       // ---------------------------------------------------------------
@@ -291,7 +335,12 @@ export const useGameStore = create<GameStore>()(
           pausedRemainingMs: remaining,
           endsAt: null,
         });
-        void publishEvent(state.pin, EVENTS.GAME_STATE, { state: "paused" });
+        void publishEvent(
+          state.pin,
+          EVENTS.GAME_STATE,
+          { state: "paused" },
+          state.hostKey
+        );
       },
 
       resumeGame: () => {
@@ -307,13 +356,23 @@ export const useGameStore = create<GameStore>()(
           questionStartedAt: endsAt - QUESTION_DURATION_MS,
         });
         // Resync player timers by re-broadcasting the question start.
-        void publishEvent(state.pin, EVENTS.QUESTION_START, {
-          index: state.currentIndex,
-          total: state.questions.length,
-          endsAt,
-          durationMs: QUESTION_DURATION_MS,
-        });
-        void publishEvent(state.pin, EVENTS.GAME_STATE, { state: "question" });
+        void publishEvent(
+          state.pin,
+          EVENTS.QUESTION_START,
+          {
+            index: state.currentIndex,
+            total: state.questions.length,
+            endsAt,
+            durationMs: QUESTION_DURATION_MS,
+          },
+          state.hostKey
+        );
+        void publishEvent(
+          state.pin,
+          EVENTS.GAME_STATE,
+          { state: "question" },
+          state.hostKey
+        );
       },
 
       // ---------------------------------------------------------------
@@ -321,7 +380,12 @@ export const useGameStore = create<GameStore>()(
         const state = get();
         const leaderboard = buildLeaderboard(Object.values(state.players));
         set({ gameState: "ended", endsAt: null });
-        void publishEvent(state.pin, EVENTS.GAME_END, { leaderboard });
+        void publishEvent(
+          state.pin,
+          EVENTS.GAME_END,
+          { leaderboard },
+          state.hostKey
+        );
       },
 
       // ---------------------------------------------------------------
@@ -351,8 +415,13 @@ export const useGameStore = create<GameStore>()(
           endsAt: null,
           lastResults: null,
         });
-        broadcastPlayers(state.pin, players);
-        void publishEvent(state.pin, EVENTS.GAME_STATE, { state: "lobby" });
+        broadcastPlayers(state.pin, state.hostKey, players);
+        void publishEvent(
+          state.pin,
+          EVENTS.GAME_STATE,
+          { state: "lobby" },
+          state.hostKey
+        );
       },
 
       // ---------------------------------------------------------------
@@ -360,6 +429,7 @@ export const useGameStore = create<GameStore>()(
       resetGame: () => {
         set({
           pin: "",
+          hostKey: "",
           topic: null,
           randomize: false,
           questions: [],
@@ -388,6 +458,7 @@ export const useGameStore = create<GameStore>()(
       // re-created on load by Zustand automatically.
       partialize: (state) => ({
         pin: state.pin,
+        hostKey: state.hostKey,
         topic: state.topic,
         randomize: state.randomize,
         soundEnabled: state.soundEnabled,

@@ -214,13 +214,14 @@ export default function PlayerPage() {
     play("click");
     void publishEvent(pin, EVENTS.PLAYER_ANSWER, {
       username,
+      clientId,
       answerIndex: index,
     });
   }
 
   function quit() {
     if (pin && username) {
-      void publishEvent(pin, EVENTS.PLAYER_LEAVE, { username });
+      void publishEvent(pin, EVENTS.PLAYER_LEAVE, { username, clientId });
     }
     leave();
     setPhase("join");

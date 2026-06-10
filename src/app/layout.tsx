@@ -17,9 +17,23 @@ const instrument = Instrument_Sans({
 });
 
 export const metadata: Metadata = {
-  title: "Lakeside Trivia Night",
+  metadataBase: new URL(
+    process.env.VERCEL_PROJECT_PRODUCTION_URL
+      ? `https://${process.env.VERCEL_PROJECT_PRODUCTION_URL}`
+      : "http://localhost:3000"
+  ),
+  title: {
+    default: "Lakeside Trivia Night",
+    template: "%s · Lakeside Trivia Night",
+  },
   description:
-    "A live Kahoot-style trivia game for Lakeside YA — three rounds, one champion.",
+    "A live Kahoot-style trivia game for Lakeside YA — three rounds, one champion. Questions on the big screen, answers on your phone.",
+  openGraph: {
+    title: "Lakeside Trivia Night",
+    description:
+      "Three rounds. One champion. Join with a PIN and answer on your phone.",
+    type: "website",
+  },
 };
 
 export const viewport: Viewport = {

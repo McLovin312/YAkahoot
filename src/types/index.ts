@@ -156,10 +156,28 @@ export interface PlayerJoinPayload {
 /** Player -> host: the player's answer to the current question. */
 export interface PlayerAnswerPayload {
   username: string;
+  /** Must match the clientId the player joined with (anti-spoofing). */
+  clientId: string;
   answerIndex: 0 | 1 | 2 | 3;
 }
 
 /** Player -> host: the player is leaving. */
 export interface PlayerLeavePayload {
   username: string;
+  /** Must match the clientId the player joined with (anti-spoofing). */
+  clientId: string;
 }
+
+/**
+ * Events only the game's host may publish. Enforced server-side: the host
+ * claims its PIN with a secret `hostKey` on game creation, and every host
+ * event must present the same key.
+ */
+export const HOST_EVENTS: ReadonlySet<string> = new Set([
+  EVENTS.PLAYERS_UPDATE,
+  EVENTS.QUESTION_START,
+  EVENTS.QUESTION_RESULTS,
+  EVENTS.GAME_STATE,
+  EVENTS.GAME_END,
+  EVENTS.JOIN_RESULT,
+]);

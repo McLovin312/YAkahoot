@@ -23,8 +23,12 @@ export function realtimeMode(): RealtimeMode {
 export interface GameConnectionHandlers {
   /** Called for every game event received on the channel. */
   onEvent: (event: EventName, data: unknown) => void;
-  /** Called once the connection is live (safe to publish from this point). */
-  onConnect?: () => void;
+  /**
+   * Called once the connection is live (safe to publish from this point).
+   * `transport` is the SERVER-side fan-out in use: "redis" | "pusher" |
+   * "memory" (memory = single-machine local play).
+   */
+  onConnect?: (info: { transport: string }) => void;
   /** Called when the connection drops (transports auto-reconnect). */
   onDisconnect?: () => void;
 }
@@ -58,7 +62,9 @@ function connectPusher(
   const channelName = `game-${pin}`;
   const channel = client.subscribe(channelName);
 
-  channel.bind("pusher:subscription_succeeded", () => handlers.onConnect?.());
+  channel.bind("pusher:subscription_succeeded", () =>
+    handlers.onConnect?.({ transport: "pusher" })
+  );
   channel.bind("pusher:subscription_error", () => handlers.onDisconnect?.());
   for (const event of ALL_EVENTS) {
     channel.bind(event, (data: unknown) => handlers.onEvent(event, data));
@@ -92,7 +98,8 @@ function connectLocal(
         data: unknown;
       };
       if (event === "connected") {
-        handlers.onConnect?.();
+        const mode = (data as { mode?: string } | null)?.mode ?? "memory";
+        handlers.onConnect?.({ transport: mode });
       } else {
         handlers.onEvent(event, data);
       }
@@ -126,18 +133,21 @@ export function connectToGame(
 
 /**
  * Publish an event to everyone in the game. All client-originated events flow
- * through `/api/game/event`, which relays them via the active server-side
- * transport (keeps the Pusher secret server-side; local mode needs the server
- * anyway because the broker lives there).
+ * through `/api/game/event`, which validates them and relays them via the
+ * active server-side transport.
+ *
+ * Host events MUST include the game's secret `hostKey` (created with the
+ * game) — the server rejects host events without it.
  */
 export async function publishEvent(
   pin: string,
   event: EventName,
-  data: unknown
+  data: unknown,
+  hostKey?: string
 ): Promise<void> {
   await fetch("/api/game/event", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ pin, event, data }),
+    body: JSON.stringify({ pin, event, data, hostKey }),
   });
 }

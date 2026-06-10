@@ -121,29 +121,44 @@ data; question-start events carry **no question text and no correct answer**.
 
 ---
 
-## ▲ Deploy (Vercel) — needs Pusher
+## ▲ Deploy (Vercel) — needs Upstash Redis
 
 The local relay lives in one server process, which serverless platforms don't
-guarantee — so a deployed site uses [Pusher Channels](https://pusher.com/channels)
-(free tier is plenty).
+guarantee — so a deployed site stores the game event log in
+[Upstash Redis](https://upstash.com/) (free tier is plenty). Every event is
+written to a Redis stream and players receive it over SSE with **lossless
+reconnects** (missed events are replayed via `Last-Event-ID`).
 
-1. Create a free Pusher Channels app → copy the 4 values from **App Keys**.
-2. Push this repo to GitHub, import it at <https://vercel.com/new>.
-3. Add the env vars in **Project → Settings → Environment Variables**:
+1. Push this repo to GitHub and import it at <https://vercel.com/new>.
+2. Add Upstash: either install the **Upstash integration from the Vercel
+   Marketplace** (sets the env vars automatically), or create a free database
+   at <https://console.upstash.com/> and add the two values yourself under
+   **Project → Settings → Environment Variables**:
 
-   | Key                          | Value                        |
-   | ---------------------------- | ---------------------------- |
-   | `PUSHER_APP_ID`              | _app id_                     |
-   | `PUSHER_SECRET`              | _secret_                     |
-   | `NEXT_PUBLIC_PUSHER_KEY`     | _key_                        |
-   | `NEXT_PUBLIC_PUSHER_CLUSTER` | _cluster_ (e.g. `us2`)       |
+   | Key                        | Value                              |
+   | -------------------------- | ---------------------------------- |
+   | `UPSTASH_REDIS_REST_URL`   | _REST URL from the database page_  |
+   | `UPSTASH_REDIS_REST_TOKEN` | _REST token from the same page_    |
 
-4. Deploy. The app detects real credentials and switches to Pusher
-   automatically (placeholders like `REPLACE_WITH_…` are ignored).
+3. Deploy. The app detects the credentials and switches to the Redis
+   transport automatically. (`/api/health` should report
+   `{"transport":"redis","redisOk":true}` — and the host lobby shows a loud
+   warning if a deployed site has no realtime backend.)
 
-To test the Pusher path locally before deploying, put the same 4 values in
-`.env.local` and restart — the status chip on the host screen will read
-**Live** instead of **Live — local Wi-Fi**.
+> Pusher Channels is also supported as an alternative backend (see
+> `.env.example`). Priority when multiple are configured: Redis → Pusher →
+> in-memory (local only).
+
+### Security model
+
+- **Host authentication** — creating a game generates a secret `hostKey` that
+  claims the PIN server-side; host events (question-start, results, game-end,
+  kicks…) are rejected without it, so players can't forge them.
+- **Answer integrity** — answers must carry the `clientId` the player joined
+  with; one answer per question, enforced host-side.
+- **Abuse guards** — event whitelist, per-event payload validation, 64KB body
+  cap, per-IP rate limiting, security headers, no server info disclosure in
+  production.
 
 ---
 

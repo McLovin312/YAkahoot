@@ -19,11 +19,7 @@ import {
   WifiOff,
 } from "lucide-react";
 import { QUESTION_DURATION_MS, useGameStore } from "@/store/gameStore";
-import {
-  connectToGame,
-  publishEvent,
-  realtimeMode,
-} from "@/lib/realtime/client";
+import { connectToGame, publishEvent } from "@/lib/realtime/client";
 import {
   EVENTS,
   type PlayerAnswerPayload,
@@ -62,6 +58,7 @@ export default function HostGamePage() {
 
   const play = useSound(soundEnabled);
   const [connected, setConnected] = useState(false);
+  const [transport, setTransport] = useState<string | null>(null);
 
   // Render only after mount: the store hydrates from localStorage on the
   // client, so the first server-rendered frame can't match it.
@@ -81,7 +78,10 @@ export default function HostGamePage() {
     if (!mounted || !pin) return;
 
     const connection = connectToGame(pin, {
-      onConnect: () => setConnected(true),
+      onConnect: (info) => {
+        setConnected(true);
+        setTransport(info.transport);
+      },
       onDisconnect: () => setConnected(false),
       onEvent: (event, data) => {
         const store = useGameStore.getState();
@@ -95,21 +95,32 @@ export default function HostGamePage() {
 
             const accepted = store.addPlayer(username, clientId);
             if (accepted) play("join");
-            void publishEvent(store.pin, EVENTS.JOIN_RESULT, {
-              username,
-              accepted,
-              reason: accepted ? undefined : "That username is already taken.",
-            });
+            void publishEvent(
+              store.pin,
+              EVENTS.JOIN_RESULT,
+              {
+                username,
+                accepted,
+                reason: accepted
+                  ? undefined
+                  : "That username is already taken.",
+              },
+              store.hostKey
+            );
             break;
           }
           case EVENTS.PLAYER_ANSWER: {
             const payload = data as PlayerAnswerPayload;
-            store.recordAnswer(payload.username, payload.answerIndex);
+            store.recordAnswer(
+              payload.username,
+              payload.clientId,
+              payload.answerIndex
+            );
             break;
           }
           case EVENTS.PLAYER_LEAVE: {
             const payload = data as PlayerLeavePayload;
-            store.removePlayer(payload.username);
+            store.removePlayer(payload.username, payload.clientId);
             break;
           }
         }
@@ -148,7 +159,7 @@ export default function HostGamePage() {
               <WifiOff className="h-4 w-4 text-slate-500" strokeWidth={2.5} />
             )}
             {connected
-              ? realtimeMode() === "local"
+              ? transport === "memory"
                 ? "Live — local Wi-Fi"
                 : "Live"
               : "Connecting…"}
@@ -235,6 +246,19 @@ function LobbyView() {
       .catch(() => setJoinBase(origin));
   }, []);
 
+  // Loud warning if the site is deployed without a shared realtime backend
+  // (Upstash Redis or Pusher) — players would land on different serverless
+  // instances and never see each other.
+  const [misconfigured, setMisconfigured] = useState(false);
+  useEffect(() => {
+    fetch("/api/health")
+      .then((r) => r.json())
+      .then((d: { misconfigured?: boolean }) =>
+        setMisconfigured(Boolean(d.misconfigured))
+      )
+      .catch(() => {});
+  }, []);
+
   const joinUrl = joinBase ? `${joinBase}/player?pin=${pin}` : null;
 
   function start() {
@@ -249,6 +273,15 @@ function LobbyView() {
 
   return (
     <div className="flex flex-col items-center">
+      {misconfigured && (
+        <div className="card mb-6 w-full max-w-4xl border-amber-400/40 bg-amber-500/10 p-4 text-sm text-amber-200">
+          <strong>Realtime backend missing.</strong> This deployment has no
+          Upstash Redis (or Pusher) configured, so players won&apos;t connect
+          reliably. Add the <code>UPSTASH_REDIS_REST_URL</code> and{" "}
+          <code>UPSTASH_REDIS_REST_TOKEN</code> environment variables and
+          redeploy.
+        </div>
+      )}
       <div className="grid w-full max-w-4xl gap-6 lg:grid-cols-[1fr_auto]">
         {/* PIN marquee */}
         <div className="card flex flex-col items-center justify-center py-10 text-center">
