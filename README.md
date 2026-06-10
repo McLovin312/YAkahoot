@@ -13,7 +13,7 @@ Built with **Next.js 15 (App Router)**, **TypeScript**, **Tailwind CSS**,
 
 ---
 
-## 🚀 Play locally (no setup, no accounts)
+## Play locally (no setup, no accounts)
 
 ```bash
 npm install
@@ -29,10 +29,10 @@ Open <http://localhost:3000> on the host machine (the big screen):
    enter the PIN + a name, and join.
 3. Hit **Start game**. Answers, scores and the leaderboard sync live.
 
-> 💡 First run on Windows: if a firewall prompt appears for Node.js, allow it
+> First run on Windows: if a firewall prompt appears for Node.js, allow it
 > on **Private networks** — that's what lets phones reach the host machine.
 >
-> 💡 To test alone, open the player page in a second browser window.
+> To test alone, open the player page in a second browser window.
 
 **How that works with no configuration:** when no Pusher credentials are set,
 the app uses its **built-in realtime relay** — an in-memory broker on the dev
@@ -42,7 +42,7 @@ works the same way for a production-speed local server.)
 
 ---
 
-## 🏆 Game-night format
+## Game-night format
 
 1. Play the three regular rounds (**Brainrot**, **Bible**, **Random**) —
    anyone can join each round.
@@ -52,28 +52,28 @@ works the same way for a production-speed local server.)
 
 ---
 
-## ✨ Features
+## Features
 
-- 📱 **Host + Player split** — the question text lives only on the host
+- **Host + Player split** — the question text lives only on the host
   screen; phones get **only the four colored shape buttons** (anti-cheat)
-- 🔀 **Answer positions shuffle every game** — banks are authored
+- **Answer positions shuffle every game** — banks are authored
   "correct answer first" and shuffled at game creation, so there's no
   pattern to learn
-- ⚡ **Realtime multiplayer** — zero-config local relay, or Pusher when deployed
-- 📷 **QR-code join** with the PIN pre-filled
-- 🏁 **Speed scoring** — correct answers earn 1000 → 500 pts, faster = more
-- ⏱️ **20-second timer**, auto-advance when everyone has answered
-- 🎛️ **Host controls** — pause, resume, skip, end, restart with same players
-- 🥇 **Live leaderboard** with podium, champion screen with confetti
-- 🛡️ **Anti-cheat** — one answer per question, unique usernames, refresh-safe
+- **Realtime multiplayer** — zero-config local relay, or Pusher when deployed
+- **QR-code join** with the PIN pre-filled
+- **Speed scoring** — correct answers earn 1000 → 500 pts, faster = more
+- **20-second timer**, auto-advance when everyone has answered
+- **Host controls** — pause, resume, skip, end, restart with same players
+- **Live leaderboard** with podium, champion screen with confetti
+- **Anti-cheat** — one answer per question, unique usernames, refresh-safe
   reconnects (per-device id)
-- 💾 **Session recovery** — host and players survive a page refresh
-- 🔊 Sound effects generated at runtime (no audio files)
-- ♿ Accessible, responsive, reduced-motion aware
+- **Session recovery** — host and players survive a page refresh
+- Sound effects generated at runtime (no audio files)
+- Accessible, responsive, reduced-motion aware
 
 ---
 
-## 🗂️ Project structure
+## Project structure
 
 ```
 src/
@@ -162,7 +162,7 @@ reconnects** (missed events are replayed via `Last-Event-ID`).
 
 ---
 
-## 🎮 Editing questions
+## Editing questions
 
 Question banks live in `src/data/questions/`. **Author the correct answer
 first** — positions are shuffled automatically at game time:
@@ -181,7 +181,7 @@ Add the object to the round's array — counts and game flow update on their own
 
 ---
 
-## 📜 Scripts
+## Scripts
 
 | Command         | Description                              |
 | --------------- | ---------------------------------------- |
