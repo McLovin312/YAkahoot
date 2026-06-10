@@ -1,5 +1,6 @@
 import type { Metadata, Viewport } from "next";
 import { Bricolage_Grotesque, Instrument_Sans } from "next/font/google";
+import { Analytics } from "@vercel/analytics/next";
 import "./globals.css";
 
 // Display font (headings, buttons, the PIN) — expressive and confident.
@@ -16,12 +17,16 @@ const instrument = Instrument_Sans({
   variable: "--font-instrument",
 });
 
+// Canonical site URL (share cards, canonical links). Override with
+// NEXT_PUBLIC_SITE_URL if the domain ever changes.
+const SITE_URL =
+  process.env.NEXT_PUBLIC_SITE_URL ??
+  (process.env.VERCEL
+    ? "https://lakesideyoungadults.com"
+    : "http://localhost:3000");
+
 export const metadata: Metadata = {
-  metadataBase: new URL(
-    process.env.VERCEL_PROJECT_PRODUCTION_URL
-      ? `https://${process.env.VERCEL_PROJECT_PRODUCTION_URL}`
-      : "http://localhost:3000"
-  ),
+  metadataBase: new URL(SITE_URL),
   title: {
     default: "Lakeside Trivia Night",
     template: "%s · Lakeside Trivia Night",
@@ -52,6 +57,7 @@ export default function RootLayout({
       <body className="font-sans">
         <div className="stage-noise" aria-hidden="true" />
         {children}
+        <Analytics />
       </body>
     </html>
   );
