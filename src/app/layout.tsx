@@ -55,7 +55,9 @@ export default function RootLayout({
   return (
     <html lang="en" className={`${bricolage.variable} ${instrument.variable}`}>
       <body className="font-sans">
+        <div className="stage-aurora" aria-hidden="true" />
         <div className="stage-noise" aria-hidden="true" />
+        <div className="stage-vignette" aria-hidden="true" />
         {children}
         <Analytics />
       </body>

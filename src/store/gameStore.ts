@@ -22,6 +22,9 @@ import { publishEvent } from "@/lib/realtime/client";
 /** How long each question stays open, in milliseconds. */
 export const QUESTION_DURATION_MS = 20_000;
 
+/** How long results stay on screen before auto-advancing, in milliseconds. */
+export const RESULTS_AUTO_ADVANCE_MS = 8_000;
+
 /**
  * The authoritative HOST game store.
  *
@@ -62,6 +65,8 @@ interface GameStore {
     correctIndex: 0 | 1 | 2 | 3;
     correctCount: number;
     totalAnswered: number;
+    /** Epoch ms when the game auto-advances to the next question. */
+    nextAt: number;
   } | null;
 
   // --- actions ---
@@ -263,7 +268,7 @@ export const useGameStore = create<GameStore>()(
           lastResults: null,
         });
 
-        // Player-safe payload: question text only — never options/answer.
+        // Phones get the question + options — never which one is correct.
         const liveQuestion = state.questions[nextIndex];
         void publishEvent(
           state.pin,
@@ -272,6 +277,7 @@ export const useGameStore = create<GameStore>()(
             index: nextIndex,
             total: state.questions.length,
             question: liveQuestion?.question ?? "",
+            options: liveQuestion?.options ?? ["", "", "", ""],
             endsAt,
             durationMs: QUESTION_DURATION_MS,
           },
@@ -294,6 +300,10 @@ export const useGameStore = create<GameStore>()(
         const earned: Record<string, number> = {};
         for (const p of answered) earned[p.username] = p.lastPointsEarned;
 
+        // Results show for a fixed beat, then the game moves on by itself.
+        // Phones get the same deadline so they can run the same countdown.
+        const nextAt = Date.now() + RESULTS_AUTO_ADVANCE_MS;
+
         set({
           gameState: "results",
           endsAt: null,
@@ -301,6 +311,7 @@ export const useGameStore = create<GameStore>()(
             correctIndex: question.correctIndex,
             correctCount,
             totalAnswered: answered.length,
+            nextAt,
           },
         });
 
@@ -313,6 +324,8 @@ export const useGameStore = create<GameStore>()(
             totalAnswered: answered.length,
             leaderboard,
             earned,
+            correctText: question.options[question.correctIndex],
+            nextAt,
           },
           state.hostKey
         );
@@ -361,13 +374,16 @@ export const useGameStore = create<GameStore>()(
           // Shift the start reference so scoring stays fair after the pause.
           questionStartedAt: endsAt - QUESTION_DURATION_MS,
         });
-        // Resync player timers by re-broadcasting the question start.
+        // Resync player timers by re-broadcasting the full question start.
+        const liveQuestion = state.questions[state.currentIndex];
         void publishEvent(
           state.pin,
           EVENTS.QUESTION_START,
           {
             index: state.currentIndex,
             total: state.questions.length,
+            question: liveQuestion?.question ?? "",
+            options: liveQuestion?.options ?? ["", "", "", ""],
             endsAt,
             durationMs: QUESTION_DURATION_MS,
           },

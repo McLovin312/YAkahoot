@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import { motion, AnimatePresence } from "framer-motion";
 import {
@@ -27,6 +27,7 @@ import {
   type QuestionStartPayload,
 } from "@/types";
 import { isValidUsername, normalizeUsername } from "@/lib/utils";
+import { useCountdown } from "@/lib/useCountdown";
 import { useSound } from "@/lib/useSound";
 import { ANSWER_SHAPES } from "@/lib/answers";
 import dynamic from "next/dynamic";
@@ -73,6 +74,9 @@ export default function PlayerPage() {
 
   // Keep the phase we were in before a pause so we can restore it.
   const prePausePhase = useRef<Phase>("waiting");
+  // Last seen question index: a re-broadcast of the SAME question (pause ->
+  // resume) must not wipe an answer that's already locked in.
+  const lastQuestionIndex = useRef<number | null>(null);
 
   // Render only after mount (persisted identity hydrates client-side).
   const [mounted, setMounted] = useState(false);
@@ -129,10 +133,15 @@ export default function PlayerPage() {
             break;
           }
           case EVENTS.QUESTION_START: {
-            setQuestion(data as QuestionStartPayload);
-            setSelected(null);
-            setResults(null);
-            setShowQuestion(false);
+            const payload = data as QuestionStartPayload;
+            const isReplay = lastQuestionIndex.current === payload.index;
+            lastQuestionIndex.current = payload.index;
+            setQuestion(payload);
+            if (!isReplay) {
+              setSelected(null);
+              setResults(null);
+              setShowQuestion(false);
+            }
             setPhase("question");
             break;
           }
@@ -152,6 +161,7 @@ export default function PlayerPage() {
               setPhase((p) => (p === "paused" ? prePausePhase.current : p));
             } else if (payload.state === "lobby") {
               // Game was restarted by the host.
+              lastQuestionIndex.current = null;
               setPhase("waiting");
               setQuestion(null);
               setResults(null);
@@ -160,6 +170,7 @@ export default function PlayerPage() {
             break;
           }
           case EVENTS.GAME_END: {
+            lastQuestionIndex.current = null;
             setFinalBoard((data as { leaderboard: LeaderboardEntry[] }).leaderboard);
             setPhase("ended");
             break;
@@ -245,6 +256,7 @@ export default function PlayerPage() {
       void publishEvent(pin, EVENTS.PLAYER_LEAVE, { username, clientId });
     }
     leave();
+    lastQuestionIndex.current = null;
     setPhase("join");
     setQuestion(null);
     setResults(null);
@@ -255,6 +267,19 @@ export default function PlayerPage() {
   const myEntry =
     results?.leaderboard.find((e) => e.username === username) ??
     finalBoard.find((e) => e.username === username);
+
+  // One shared font size for all four tiles, fitted to the longest option, so
+  // the grid doesn't look lopsided when answer lengths vary wildly.
+  const optionTextClass = useMemo(() => {
+    const longest = Math.max(
+      0,
+      ...(question?.options ?? []).map((o) => o.length)
+    );
+    if (longest <= 12) return "text-2xl";
+    if (longest <= 22) return "text-xl";
+    if (longest <= 34) return "text-lg";
+    return "text-base";
+  }, [question?.options]);
 
   if (!mounted) return null;
 
@@ -425,8 +450,9 @@ export default function PlayerPage() {
                 </button>
               )}
 
-              {/* Players ONLY see colored shape buttons — no answer text.
-                  The grid gives back a little height while the question is open. */}
+              {/* Full answers on the buttons; which one is CORRECT stays on
+                  the host until results. The grid gives back a little height
+                  while the question text is open above. */}
               <div
                 className={`grid grid-cols-2 grid-rows-2 gap-3 ${
                   showQuestion ? "h-[52dvh]" : "h-[60dvh]"
@@ -434,9 +460,12 @@ export default function PlayerPage() {
               >
                 {ANSWER_SHAPES.map((shape) => (
                   <AnswerTile
-                    key={shape.index}
+                    key={`${question.index}-${shape.index}`}
                     shape={shape}
                     big
+                    text={question.options?.[shape.index]}
+                    textClass={optionTextClass}
+                    appearDelay={0.04 * shape.index}
                     onClick={() => answer(shape.index)}
                     disabled={selected !== null}
                     selected={selected === shape.index}
@@ -487,6 +516,24 @@ export default function PlayerPage() {
                 </motion.p>
               )}
 
+              {/* The right answer, spelled out with its shape + color */}
+              {(results.correctText ??
+                question?.options?.[results.correctIndex]) && (
+                <div className="mt-5 text-left">
+                  <p className="mb-2 text-center font-display text-xs font-bold uppercase tracking-[0.3em] text-slate-400">
+                    Correct answer
+                  </p>
+                  <AnswerTile
+                    shape={ANSWER_SHAPES[results.correctIndex]}
+                    text={
+                      results.correctText ??
+                      question?.options?.[results.correctIndex]
+                    }
+                    revealCorrect
+                  />
+                </div>
+              )}
+
               {myEntry && (
                 <p className="mt-4 font-display text-lg font-bold text-slate-200">
                   You&apos;re{" "}
@@ -504,6 +551,16 @@ export default function PlayerPage() {
                   highlightUsername={username}
                 />
               </div>
+
+              {/* Host auto-advances — mirror its countdown down here */}
+              {results.nextAt && (
+                <NextUpBar
+                  nextAt={results.nextAt}
+                  final={
+                    question ? question.index + 1 >= question.total : false
+                  }
+                />
+              )}
             </div>
           )}
 
@@ -583,6 +640,30 @@ function ResultBanner({
     >
       <Icon className="h-8 w-8" strokeWidth={3} />
       {title}
+    </div>
+  );
+}
+
+/** Thin draining bar mirroring the host's auto-advance countdown. */
+function NextUpBar({ nextAt, final }: { nextAt: number; final: boolean }) {
+  const msLeft = useCountdown(nextAt);
+  // Denominator = however much runway existed when this bar mounted, so the
+  // bar always starts full even if the event arrived a beat late.
+  const totalRef = useRef(Math.max(1000, nextAt - Date.now()));
+  const frac = Math.min(1, msLeft / totalRef.current);
+
+  return (
+    <div className="mt-6">
+      <div className="mb-1.5 flex items-center justify-between font-display text-xs font-bold uppercase tracking-wide text-slate-400">
+        <span>{final ? "Final results" : "Next question"}</span>
+        <span className="tabular-nums">{Math.ceil(msLeft / 1000)}s</span>
+      </div>
+      <div className="h-1.5 overflow-hidden rounded-full bg-white/10">
+        <div
+          className="h-full rounded-full bg-gradient-to-r from-brand-400 to-grape-500 transition-[width] duration-200 ease-linear"
+          style={{ width: `${frac * 100}%` }}
+        />
+      </div>
     </div>
   );
 }

@@ -114,16 +114,17 @@ export interface PlayersUpdatePayload {
 
 /**
  * Host -> all: a new question has started.
- * NOTE: intentionally contains NO answer options and NO correct answer so that
- * players (who only see colored buttons) cannot cheat by inspecting events.
- * The question text alone is safe to share — players can tap to re-read it,
- * but the shape -> answer mapping only ever exists on the host's screen.
+ * Carries the question text and the four options (in their shuffled display
+ * order) so phones can render the full answers. Which option is CORRECT
+ * never leaves the host until the results event — that's the anti-cheat line.
  */
 export interface QuestionStartPayload {
   index: number; // zero-based question index
   total: number;
-  /** The question text (no options), for the player's tap-to-reveal. */
+  /** The question text, for the player's tap-to-reveal. */
   question: string;
+  /** The four answers in display order (correct one not identified). */
+  options: [string, string, string, string];
   /** Epoch ms when the question's timer expires. */
   endsAt: number;
   /** Duration of the question in ms (e.g. 20000). */
@@ -138,6 +139,10 @@ export interface QuestionResultsPayload {
   leaderboard: LeaderboardEntry[];
   /** Points each player earned on this question (username -> points). */
   earned?: Record<string, number>;
+  /** Text of the correct answer (phones show it during the reveal). */
+  correctText?: string;
+  /** Epoch ms when the host auto-advances (drives the phones' countdown). */
+  nextAt?: number;
 }
 
 /** Host -> all: a coarse game-state change (used to drive player UI overlays). */

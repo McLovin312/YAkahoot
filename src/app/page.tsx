@@ -35,7 +35,7 @@ export default function LandingPage() {
 
         <h1 className="font-display text-6xl font-extrabold leading-[0.92] tracking-tight text-white sm:text-8xl">
           Trivia
-          <span className="block bg-gradient-to-r from-brand-300 via-grape-400 to-gold-400 bg-clip-text text-transparent">
+          <span className="block animate-gradient-x bg-gradient-to-r from-brand-300 via-grape-400 to-gold-400 bg-[length:200%_auto] bg-clip-text text-transparent">
             Night
           </span>
         </h1>

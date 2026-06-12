@@ -77,11 +77,16 @@ const config: Config = {
           "0%, 100%": { opacity: "0.6" },
           "50%": { opacity: "1" },
         },
+        "gradient-x": {
+          "0%, 100%": { backgroundPosition: "0% 50%" },
+          "50%": { backgroundPosition: "100% 50%" },
+        },
       },
       animation: {
         float: "float 5s ease-in-out infinite",
         "pop-in": "pop-in 0.25s ease-out",
         "pulse-glow": "pulse-glow 2.4s ease-in-out infinite",
+        "gradient-x": "gradient-x 6s ease-in-out infinite",
       },
     },
   },

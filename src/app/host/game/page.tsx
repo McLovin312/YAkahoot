@@ -19,7 +19,11 @@ import {
   Wifi,
   WifiOff,
 } from "lucide-react";
-import { QUESTION_DURATION_MS, useGameStore } from "@/store/gameStore";
+import {
+  QUESTION_DURATION_MS,
+  RESULTS_AUTO_ADVANCE_MS,
+  useGameStore,
+} from "@/store/gameStore";
 import { connectToGame, publishEvent } from "@/lib/realtime/client";
 import {
   EVENTS,
@@ -30,6 +34,7 @@ import {
 import { getTopic } from "@/data/topics";
 import { buildLeaderboard } from "@/lib/score";
 import { cn, isValidUsername } from "@/lib/utils";
+import { useCountdown } from "@/lib/useCountdown";
 import { ShapeIcon } from "@/components/ShapeIcon";
 import { useSound } from "@/lib/useSound";
 import { ANSWER_SHAPES } from "@/lib/answers";
@@ -448,8 +453,23 @@ function QuestionView() {
         <span className="chip">
           Question {currentIndex + 1} / {questions.length}
         </span>
-        <span className="chip">
-          <Users className="h-4 w-4 text-brand-300" strokeWidth={2.5} />
+        <span
+          className={cn(
+            "chip transition-colors duration-300",
+            list.length > 0 &&
+              answeredCount === list.length &&
+              "!border-emerald-400/50 !bg-emerald-500/15 !text-emerald-200"
+          )}
+        >
+          <Users
+            className={cn(
+              "h-4 w-4",
+              list.length > 0 && answeredCount === list.length
+                ? "text-emerald-300"
+                : "text-brand-300"
+            )}
+            strokeWidth={2.5}
+          />
           {answeredCount} / {list.length} answered
         </span>
       </div>
@@ -499,6 +519,7 @@ function QuestionView() {
             key={shape.index}
             shape={shape}
             text={question.options[shape.index]}
+            appearDelay={0.08 + 0.05 * shape.index}
           />
         ))}
       </div>
@@ -586,6 +607,22 @@ function ResultsView() {
     return counts;
   }, [players]);
 
+  // Auto-advance: results hold for a fixed beat, then the game moves on by
+  // itself. Clicking "Next" just skips the wait (unmounting clears the timer).
+  const nextAt = lastResults?.nextAt ?? null;
+  const msLeft = useCountdown(nextAt);
+  useEffect(() => {
+    if (!nextAt) return;
+    const id = setTimeout(
+      () => {
+        const store = useGameStore.getState();
+        if (store.gameState === "results") store.nextQuestion();
+      },
+      Math.max(0, nextAt - Date.now())
+    );
+    return () => clearTimeout(id);
+  }, [nextAt]);
+
   const question = questions[currentIndex];
   if (!lastResults || !question) return null;
 
@@ -598,6 +635,9 @@ function ResultsView() {
       {/* Correct answer + how the room voted */}
       <div className="flex flex-col gap-4">
         <div className="card p-6 sm:p-8">
+          <p className="mb-2 text-center font-display text-sm font-semibold text-slate-400">
+            Q{currentIndex + 1} · {question.question}
+          </p>
           <p className="eyebrow mb-4 text-center">Correct answer</p>
           <AnswerTile
             shape={correctShape}
@@ -655,9 +695,35 @@ function ResultsView() {
             })}
           </div>
         </div>
-        <button onClick={nextQuestion} className="btn-gold self-center">
-          {isLast ? "See final results" : "Next question"}
-          <ArrowRight className="h-5 w-5" strokeWidth={2.5} />
+        <button
+          onClick={nextQuestion}
+          className="btn-gold relative self-center overflow-hidden"
+        >
+          {/* Draining fill = time left before the game advances on its own */}
+          {nextAt && (
+            <span
+              aria-hidden="true"
+              className="absolute inset-0 origin-left bg-white/25 transition-transform duration-200 ease-linear"
+              style={{
+                transform: `scaleX(${Math.min(1, msLeft / RESULTS_AUTO_ADVANCE_MS)})`,
+              }}
+            />
+          )}
+          <span className="relative inline-flex items-center gap-2">
+            {isLast ? "See final results" : "Next question"}
+            {nextAt && msLeft > 0 && (
+              <span className="tabular-nums opacity-80">
+                {Math.ceil(msLeft / 1000)}
+              </span>
+            )}
+            <ArrowRight className="h-5 w-5" strokeWidth={2.5} />
+          </span>
+        </button>
+        <button
+          onClick={() => useGameStore.getState().endGame()}
+          className="cursor-pointer self-center font-display text-sm font-semibold text-slate-500 transition-colors duration-200 hover:text-rose-300"
+        >
+          End game early
         </button>
       </div>
 
@@ -715,7 +781,7 @@ function EndView() {
           <p className="font-display text-xl font-bold uppercase tracking-widest text-gold-300">
             1st place
           </p>
-          <p className="font-display text-5xl font-extrabold text-white">
+          <p className="shine-text font-display text-5xl font-extrabold">
             {first.username}
           </p>
           <p className="font-display text-xl font-bold text-gold-300">
