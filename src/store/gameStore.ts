@@ -263,13 +263,15 @@ export const useGameStore = create<GameStore>()(
           lastResults: null,
         });
 
-        // Player-safe payload: NO question text, NO correct answer.
+        // Player-safe payload: question text only — never options/answer.
+        const liveQuestion = state.questions[nextIndex];
         void publishEvent(
           state.pin,
           EVENTS.QUESTION_START,
           {
             index: nextIndex,
             total: state.questions.length,
+            question: liveQuestion?.question ?? "",
             endsAt,
             durationMs: QUESTION_DURATION_MS,
           },
@@ -288,6 +290,9 @@ export const useGameStore = create<GameStore>()(
         const answered = all.filter((p) => p.hasAnswered);
         const correctCount = answered.filter((p) => p.lastAnswerCorrect).length;
         const leaderboard = buildLeaderboard(all);
+        // Per-player points earned this question, for the "+N pts" banner.
+        const earned: Record<string, number> = {};
+        for (const p of answered) earned[p.username] = p.lastPointsEarned;
 
         set({
           gameState: "results",
@@ -307,6 +312,7 @@ export const useGameStore = create<GameStore>()(
             correctCount,
             totalAnswered: answered.length,
             leaderboard,
+            earned,
           },
           state.hostKey
         );

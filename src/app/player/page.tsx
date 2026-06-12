@@ -6,7 +6,9 @@ import { motion, AnimatePresence } from "framer-motion";
 import {
   ArrowLeft,
   Check,
+  ChevronDown,
   Clock,
+  Eye,
   LogIn,
   Pause,
   Trophy,
@@ -63,6 +65,8 @@ export default function PlayerPage() {
   const [phase, setPhase] = useState<Phase>("join");
   const [question, setQuestion] = useState<QuestionStartPayload | null>(null);
   const [selected, setSelected] = useState<number | null>(null);
+  // Tap-to-reveal: show the question text on the phone (big screen too far).
+  const [showQuestion, setShowQuestion] = useState(false);
   const [results, setResults] = useState<QuestionResultsPayload | null>(null);
   const [finalBoard, setFinalBoard] = useState<LeaderboardEntry[]>([]);
   const [playerCount, setPlayerCount] = useState(0);
@@ -128,6 +132,7 @@ export default function PlayerPage() {
             setQuestion(data as QuestionStartPayload);
             setSelected(null);
             setResults(null);
+            setShowQuestion(false);
             setPhase("question");
             break;
           }
@@ -392,8 +397,41 @@ export default function PlayerPage() {
                 />
               </div>
 
-              {/* Players ONLY see colored shape buttons — no answer text. */}
-              <div className="grid h-[60dvh] grid-cols-2 grid-rows-2 gap-3">
+              {/* Tap-to-reveal: re-read the question without the big screen.
+                  Only the question text is ever sent — answers stay host-only. */}
+              {question.question && (
+                <button
+                  type="button"
+                  onClick={() => setShowQuestion((v) => !v)}
+                  aria-expanded={showQuestion}
+                  className="mb-3 w-full cursor-pointer rounded-2xl border border-white/10 bg-white/5 px-4 py-3 text-left transition-colors duration-200 hover:bg-white/10 active:bg-white/10"
+                >
+                  {showQuestion ? (
+                    <motion.span
+                      initial={{ opacity: 0, y: -4 }}
+                      animate={{ opacity: 1, y: 0 }}
+                      transition={{ duration: 0.2 }}
+                      className="block font-display text-base font-bold leading-snug text-white"
+                    >
+                      {question.question}
+                    </motion.span>
+                  ) : (
+                    <span className="flex items-center justify-center gap-2 font-display text-sm font-bold text-slate-300">
+                      <Eye className="h-4 w-4" strokeWidth={2.5} />
+                      Tap to read the question
+                      <ChevronDown className="h-4 w-4" strokeWidth={2.5} />
+                    </span>
+                  )}
+                </button>
+              )}
+
+              {/* Players ONLY see colored shape buttons — no answer text.
+                  The grid gives back a little height while the question is open. */}
+              <div
+                className={`grid grid-cols-2 grid-rows-2 gap-3 ${
+                  showQuestion ? "h-[52dvh]" : "h-[60dvh]"
+                }`}
+              >
                 {ANSWER_SHAPES.map((shape) => (
                   <AnswerTile
                     key={shape.index}
@@ -431,6 +469,22 @@ export default function PlayerPage() {
                 <ResultBanner tone="good" title="Correct!" icon={Check} />
               ) : (
                 <ResultBanner tone="bad" title="Not quite" icon={X} />
+              )}
+
+              {(results.earned?.[username] ?? 0) > 0 && (
+                <motion.p
+                  initial={{ opacity: 0, scale: 0.7 }}
+                  animate={{ opacity: 1, scale: 1 }}
+                  transition={{
+                    type: "spring",
+                    stiffness: 320,
+                    damping: 20,
+                    delay: 0.15,
+                  }}
+                  className="mx-auto mt-4 inline-block rounded-full border border-gold-400/40 bg-gold-400/15 px-5 py-1.5 font-display text-xl font-extrabold text-gold-300"
+                >
+                  +{(results.earned?.[username] ?? 0).toLocaleString()} pts
+                </motion.p>
               )}
 
               {myEntry && (

@@ -36,6 +36,11 @@ export interface Question {
   question: string;
   options: [string, string, string, string];
   correctIndex: 0 | 1 | 2 | 3;
+  /**
+   * Optional image shown on the host's big screen with the question
+   * (e.g. "name this meme" rounds). Path under /public.
+   */
+  image?: string;
 }
 
 // ---------------------------------------------------------------------------
@@ -109,12 +114,16 @@ export interface PlayersUpdatePayload {
 
 /**
  * Host -> all: a new question has started.
- * NOTE: intentionally contains NO question text and NO correct answer so that
+ * NOTE: intentionally contains NO answer options and NO correct answer so that
  * players (who only see colored buttons) cannot cheat by inspecting events.
+ * The question text alone is safe to share — players can tap to re-read it,
+ * but the shape -> answer mapping only ever exists on the host's screen.
  */
 export interface QuestionStartPayload {
   index: number; // zero-based question index
   total: number;
+  /** The question text (no options), for the player's tap-to-reveal. */
+  question: string;
   /** Epoch ms when the question's timer expires. */
   endsAt: number;
   /** Duration of the question in ms (e.g. 20000). */
@@ -127,6 +136,8 @@ export interface QuestionResultsPayload {
   correctCount: number;
   totalAnswered: number;
   leaderboard: LeaderboardEntry[];
+  /** Points each player earned on this question (username -> points). */
+  earned?: Record<string, number>;
 }
 
 /** Host -> all: a coarse game-state change (used to drive player UI overlays). */

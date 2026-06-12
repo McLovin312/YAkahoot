@@ -6,6 +6,7 @@ import { motion, AnimatePresence } from "framer-motion";
 import QRCode from "qrcode";
 import {
   ArrowRight,
+  Check,
   Crown,
   Maximize,
   Pause,
@@ -28,7 +29,8 @@ import {
 } from "@/types";
 import { getTopic } from "@/data/topics";
 import { buildLeaderboard } from "@/lib/score";
-import { isValidUsername } from "@/lib/utils";
+import { cn, isValidUsername } from "@/lib/utils";
+import { ShapeIcon } from "@/components/ShapeIcon";
 import { useSound } from "@/lib/useSound";
 import { ANSWER_SHAPES } from "@/lib/answers";
 import dynamic from "next/dynamic";
@@ -452,17 +454,41 @@ function QuestionView() {
         </span>
       </div>
 
-      {/* Question + timer */}
-      <div className="card mb-6 flex flex-col items-center gap-6 p-8 text-center sm:flex-row sm:text-left">
-        <h2 className="flex-1 font-display text-2xl font-bold leading-snug text-white sm:text-4xl lg:text-5xl">
-          {question.question}
-        </h2>
-        {endsAt && (
-          <Timer
-            endsAt={endsAt}
-            durationMs={QUESTION_DURATION_MS}
-            onExpire={endQuestion}
-          />
+      {/* Question + timer (+ optional "name this meme" image) */}
+      <div className="card mb-6 p-8">
+        <div className="flex flex-col items-center gap-6 text-center sm:flex-row sm:text-left">
+          <h2
+            className={cn(
+              "flex-1 font-display font-bold leading-snug text-white",
+              question.image
+                ? "text-2xl sm:text-3xl lg:text-4xl"
+                : "text-2xl sm:text-4xl lg:text-5xl"
+            )}
+          >
+            {question.question}
+          </h2>
+          {endsAt && (
+            <Timer
+              endsAt={endsAt}
+              durationMs={QUESTION_DURATION_MS}
+              onExpire={endQuestion}
+            />
+          )}
+        </div>
+        {question.image && (
+          <motion.div
+            initial={{ opacity: 0, scale: 0.96 }}
+            animate={{ opacity: 1, scale: 1 }}
+            transition={{ duration: 0.3, ease: "easeOut" }}
+            className="mt-6 flex justify-center"
+          >
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img
+              src={question.image}
+              alt="Mystery image — name what you see"
+              className="max-h-72 w-auto rounded-2xl border border-white/15 bg-white/5 object-contain shadow-card"
+            />
+          </motion.div>
         )}
       </div>
 
@@ -549,27 +575,85 @@ function ResultsView() {
     [players]
   );
 
+  // How many players picked each of the four answers (for the breakdown bars).
+  const answerCounts = useMemo(() => {
+    const counts = [0, 0, 0, 0];
+    for (const p of Object.values(players)) {
+      if (p.hasAnswered && p.lastAnswerIndex !== null) {
+        counts[p.lastAnswerIndex] += 1;
+      }
+    }
+    return counts;
+  }, [players]);
+
   const question = questions[currentIndex];
   if (!lastResults || !question) return null;
 
   const correctShape = ANSWER_SHAPES[lastResults.correctIndex];
   const isLast = currentIndex + 1 >= questions.length;
+  const maxCount = Math.max(1, ...answerCounts);
 
   return (
-    <div className="grid gap-6 lg:grid-cols-2">
-      {/* Correct answer + stats */}
+    <div className="grid gap-6 lg:grid-cols-[1.2fr_1fr]">
+      {/* Correct answer + how the room voted */}
       <div className="flex flex-col gap-4">
-        <div className="card p-6 text-center">
-          <p className="eyebrow mb-4">Correct answer</p>
+        <div className="card p-6 sm:p-8">
+          <p className="eyebrow mb-4 text-center">Correct answer</p>
           <AnswerTile
             shape={correctShape}
             text={question.options[lastResults.correctIndex]}
             revealCorrect
           />
-          <p className="mt-5 font-display text-lg font-bold text-slate-200">
+          <p className="mt-5 text-center font-display text-lg font-bold text-slate-200">
             <span className="text-emerald-400">{lastResults.correctCount}</span>{" "}
             of {lastResults.totalAnswered} got it right
           </p>
+
+          {/* Answer breakdown — one animated bar per shape */}
+          <div className="mt-6 space-y-2.5 border-t border-white/10 pt-5">
+            {ANSWER_SHAPES.map((shape) => {
+              const count = answerCounts[shape.index];
+              const isCorrect = shape.index === lastResults.correctIndex;
+              return (
+                <div
+                  key={shape.index}
+                  className={cn(
+                    "flex items-center gap-3",
+                    !isCorrect && "opacity-50 saturate-50"
+                  )}
+                >
+                  <span
+                    className={cn(
+                      "flex h-9 w-9 shrink-0 items-center justify-center rounded-lg text-white",
+                      shape.bg
+                    )}
+                  >
+                    <ShapeIcon kind={shape.kind} className="h-5 w-5" />
+                  </span>
+                  <div className="h-7 flex-1 overflow-hidden rounded-lg bg-white/5 ring-1 ring-inset ring-white/10">
+                    <motion.div
+                      initial={{ width: 0 }}
+                      animate={{
+                        width: `${(count / maxCount) * 100}%`,
+                      }}
+                      transition={{
+                        duration: 0.55,
+                        ease: "easeOut",
+                        delay: 0.2,
+                      }}
+                      className={cn("h-full rounded-lg", shape.bg)}
+                    />
+                  </div>
+                  <span className="w-8 shrink-0 text-right font-display text-lg font-bold tabular-nums text-white">
+                    {count}
+                  </span>
+                  <span className="w-5 shrink-0 text-emerald-400">
+                    {isCorrect && <Check className="h-5 w-5" strokeWidth={3} />}
+                  </span>
+                </div>
+              );
+            })}
+          </div>
         </div>
         <button onClick={nextQuestion} className="btn-gold self-center">
           {isLast ? "See final results" : "Next question"}
@@ -578,7 +662,7 @@ function ResultsView() {
       </div>
 
       {/* Live leaderboard */}
-      <div className="card p-5">
+      <div className="card self-start p-5">
         <h3 className="mb-4 text-xl font-bold text-white">Leaderboard</h3>
         <Leaderboard entries={leaderboard} />
       </div>
