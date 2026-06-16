@@ -268,7 +268,12 @@ export async function claimOrVerifyHostKey(
 // ---------------------------------------------------------------------------
 
 const RATE_WINDOW_SECONDS = 60;
-const RATE_MAX_EVENTS = 240;
+// A whole youth group shares ONE public IP (everyone on the same Wi-Fi behind
+// one NAT). One 30-player game peaks near 240 events/minute on its own — joins,
+// answers, host broadcasts and the occasional rejoin — so 240 left no headroom
+// and tripped 429s mid-game. This budget comfortably covers ~40 players on a
+// single IP while still stopping a real abusive flood. Still a cheap DoS guard.
+const RATE_MAX_EVENTS = 1200;
 
 /** Returns true when the caller is within limits. */
 export async function checkRateLimit(ip: string): Promise<boolean> {

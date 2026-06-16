@@ -138,16 +138,43 @@ export function connectToGame(
  *
  * Host events MUST include the game's secret `hostKey` (created with the
  * game) — the server rejects host events without it.
+ *
+ * Resilience: a join or answer that silently fails is the worst outcome — the
+ * player taps an answer, sees "Locked in", and scores nothing. So transient
+ * failures (429 rate-limit, 5xx, network blips) are retried with a short
+ * randomized backoff. Validation errors (4xx other than 429) are NOT retried —
+ * they'd never succeed. Returns true once the server accepted the event.
  */
+const PUBLISH_MAX_ATTEMPTS = 4;
+
 export async function publishEvent(
   pin: string,
   event: EventName,
   data: unknown,
   hostKey?: string
-): Promise<void> {
-  await fetch("/api/game/event", {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ pin, event, data, hostKey }),
-  });
+): Promise<boolean> {
+  const body = JSON.stringify({ pin, event, data, hostKey });
+
+  for (let attempt = 1; attempt <= PUBLISH_MAX_ATTEMPTS; attempt++) {
+    try {
+      const res = await fetch("/api/game/event", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body,
+      });
+      if (res.ok) return true;
+      // 429 (rate limited) and 5xx are transient — back off and retry.
+      // Other 4xx (bad payload, wrong host key) will never succeed: give up.
+      const transient = res.status === 429 || res.status >= 500;
+      if (!transient || attempt === PUBLISH_MAX_ATTEMPTS) return false;
+    } catch {
+      // Network error — also transient.
+      if (attempt === PUBLISH_MAX_ATTEMPTS) return false;
+    }
+    // Backoff with jitter: ~250ms, 500ms, 1000ms (+ up to 250ms random) so a
+    // whole room retrying after a hiccup doesn't resynchronize into one spike.
+    const delay = 250 * 2 ** (attempt - 1) + Math.random() * 250;
+    await new Promise((r) => setTimeout(r, delay));
+  }
+  return false;
 }

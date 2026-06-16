@@ -101,22 +101,48 @@ function generateHostKey(): string {
   return Array.from(bytes, (b) => b.toString(16).padStart(2, "0")).join("");
 }
 
-/** Broadcast the current player roster (public, score-only) to everyone. */
+/** How long roster changes are coalesced before a single broadcast. */
+const ROSTER_BROADCAST_DEBOUNCE_MS = 300;
+
+let rosterTimer: ReturnType<typeof setTimeout> | null = null;
+let pendingRoster: {
+  pin: string;
+  hostKey: string;
+  players: Record<string, Player>;
+} | null = null;
+
+/**
+ * Broadcast the current player roster (public, score-only) to everyone.
+ *
+ * Coalesced: when 30 players join in the same couple of seconds we'd otherwise
+ * emit one PLAYERS_UPDATE per join — a burst of ~30 events from the host that
+ * eats into the per-IP rate-limit budget for no benefit (the lobby only needs
+ * the latest roster). We instead emit at most once per debounce window, always
+ * carrying the freshest roster.
+ */
 function broadcastPlayers(
   pin: string,
   hostKey: string,
   players: Record<string, Player>
 ) {
-  const list = Object.values(players).map((p) => ({
-    username: p.username,
-    score: p.score,
-  }));
-  void publishEvent(
-    pin,
-    EVENTS.PLAYERS_UPDATE,
-    { players: list, count: list.length },
-    hostKey
-  );
+  pendingRoster = { pin, hostKey, players };
+  if (rosterTimer) return; // a broadcast is already scheduled — it'll use the latest
+  rosterTimer = setTimeout(() => {
+    rosterTimer = null;
+    const snapshot = pendingRoster;
+    pendingRoster = null;
+    if (!snapshot) return;
+    const list = Object.values(snapshot.players).map((p) => ({
+      username: p.username,
+      score: p.score,
+    }));
+    void publishEvent(
+      snapshot.pin,
+      EVENTS.PLAYERS_UPDATE,
+      { players: list, count: list.length },
+      snapshot.hostKey
+    );
+  }, ROSTER_BROADCAST_DEBOUNCE_MS);
 }
 
 export const useGameStore = create<GameStore>()(

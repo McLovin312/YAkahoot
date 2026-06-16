@@ -127,12 +127,44 @@ export async function GET(request: NextRequest) {
           return;
         }
 
-        // Redis: instant delivery via pub/sub. Deduplicated against the
-        // cursor so the catch-up reads and live messages can't double-send.
-        const sendEvent = (event: BrokerEvent) => {
-          if (!isNewerEventId(event.id, cursor)) return;
-          cursor = event.id;
-          write(frame(event));
+        // Redis: the durable stream is the single source of truth. Pub/sub is
+        // ONLY a low-latency "new events — drain now" signal; it never delivers
+        // payloads directly. A serialized drain reads strictly-newer events from
+        // the stream and advances the cursor only as it actually writes them, in
+        // order. This is what makes a burst of 30 simultaneous joins lossless:
+        //
+        //   The old design delivered the pub/sub payload directly and advanced
+        //   the cursor to it. Pub/sub is at-most-once, so under a burst some
+        //   messages are dropped; and because a later message could advance the
+        //   cursor past an earlier (dropped) one, the safety poll's
+        //   `eventsAfter(cursor)` would never look back — the dropped event was
+        //   lost forever. Draining from the stream with a forward-only cursor
+        //   that moves only on real delivery removes that race entirely.
+        let draining = false;
+        let drainAgain = false;
+        const drain = async () => {
+          if (draining) {
+            // A drain is in flight; make it loop once more so this signal isn't
+            // missed (coalesces bursts into the minimum number of reads).
+            drainAgain = true;
+            return;
+          }
+          draining = true;
+          try {
+            do {
+              drainAgain = false;
+              const events = await eventsAfter(pin, cursor);
+              for (const event of events) {
+                if (!isNewerEventId(event.id, cursor)) continue;
+                cursor = event.id;
+                if (!write(frame(event))) return;
+              }
+            } while (drainAgain && !closed);
+          } catch {
+            // Transient Redis error — the periodic safety poll retries.
+          } finally {
+            draining = false;
+          }
         };
 
         const subController = new AbortController();
@@ -140,20 +172,17 @@ export async function GET(request: NextRequest) {
 
         let pollMs = SAFETY_POLL_MS;
         subscribeRedisLive(pin, {
-          // Once live, re-read the log to close the catch-up -> subscribe gap.
-          onSubscribed: () => {
-            void eventsAfter(pin, cursor)
-              .then((missed) => missed.forEach(sendEvent))
-              .catch(() => {});
-          },
-          onEvent: sendEvent,
+          // Both "subscription live" and every live message just trigger a drain
+          // from the durable stream — no payload is ever trusted directly.
+          onSubscribed: () => void drain(),
+          onEvent: () => void drain(),
         }, subController.signal).catch(() => {
-          // Pub/sub unavailable — degrade to fast polling, still correct.
+          // Pub/sub unavailable — lean on faster polling (still lossless).
           pollMs = FALLBACK_POLL_MS;
         });
 
-        // Safety-net poll: catches anything pub/sub might miss, and carries
-        // the whole load if the subscription drops.
+        // Safety-net poll: drains on a cadence in case pub/sub hiccups, drops a
+        // wake-up, or the subscription never establishes.
         const deadline = Date.now() + TIME_BUDGET_MS;
         let lastPoll = Date.now();
         while (!closed && Date.now() < deadline) {
@@ -161,12 +190,7 @@ export async function GET(request: NextRequest) {
           if (closed) break;
           if (Date.now() - lastPoll < pollMs) continue;
           lastPoll = Date.now();
-          try {
-            const events = await eventsAfter(pin, cursor);
-            events.forEach(sendEvent);
-          } catch {
-            // Transient Redis error — next poll retries.
-          }
+          await drain();
         }
         subController.abort();
         close();
